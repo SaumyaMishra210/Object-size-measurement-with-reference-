@@ -9,7 +9,7 @@ This approach is useful in scenarios where accurate size estimation is required,
 ## Example Images
 
 ### Input Image
-![Input Image](path/to/input_image.jpg](https://github.com/SaumyaMishra210/Object-size-measurement-with-reference-/blob/main/example_01.jpg)
+![Input Image](https://github.com/SaumyaMishra210/Object-size-measurement-with-reference-/blob/main/example_01.jpg)
 
 ### Annotated Output Image
-![Annotated Output Image](path/to/annotated_output_image.jpg](https://github.com/SaumyaMishra210/Object-size-measurement-with-reference-/blob/main/output1.png)
+![Annotated Output Image](https://github.com/SaumyaMishra210/Object-size-measurement-with-reference-/blob/main/output1.png)

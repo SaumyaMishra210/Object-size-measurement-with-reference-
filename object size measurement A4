@@ -1,0 +1,103 @@
+from ultralytics import YOLO
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+
+# Load the YOLO model
+model = YOLO("/content/best_mix_dataset_new.pt")  # Replace with your model path
+
+# Specify the image path
+img_path = "/content/circle.jpg"  # Replace with your image path
+
+# Run inference on the image with adjusted thresholds
+results = model(img_path, conf=0.25, iou=0.6)  # Adjusted confidence and IOU thresholds
+
+# Access the first result and extract bounding boxes and confidence scores
+result = results[0]
+boxes = result.boxes.xyxy.cpu().numpy()  # Bounding box coordinates
+confidences = result.boxes.conf.cpu().numpy()  # Confidence scores
+
+# Filter bounding boxes based on confidence threshold
+boxes = boxes[confidences > 0.25]
+
+# Load the original image
+image = cv2.imread(img_path)
+
+# Reference values for pixel-to-cm conversion based on A4 page dimensions
+a4_width_cm = 21.0  # Width in cm
+a4_height_cm = 29.7  # Height in cm
+img_height, img_width, _ = image.shape
+
+# Assuming the A4 page is occupying a portion of the image (e.g., its full height)
+pixel_per_cm_width = img_width / a4_width_cm
+pixel_per_cm_height = img_height / a4_height_cm
+
+# Function to calculate real-world dimensions based on A4 page reference
+def calculate_real_world_dimensions(x1, y1, x2, y2):
+    width_pixels = x2 - x1
+    height_pixels = y2 - y1
+    real_width_cm = width_pixels / pixel_per_cm_width
+    real_height_cm = height_pixels / pixel_per_cm_height
+    return real_width_cm, real_height_cm
+
+# Function to detect the A4 page and perform perspective transform (cropping)
+def detect_and_crop_a4_page(image, cThr=[100, 100]):
+    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    img_blur = cv2.GaussianBlur(img_gray, (5, 5), 1)
+    img_canny = cv2.Canny(img_blur, cThr[0], cThr[1])
+    kernel = np.ones((5, 5))
+    img_dial = cv2.dilate(img_canny, kernel, iterations=3)
+    img_thre = cv2.erode(img_dial, kernel, iterations=2)
+    
+    contours, _ = cv2.findContours(img_thre, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    a4_contour = None
+    
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 50000:  # Filtering based on minimum area
+            peri = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+            if len(approx) == 4:  # A4 paper should have 4 corners
+                a4_contour = approx
+                break
+    
+    if a4_contour is not None:
+        # Apply perspective transform to get a top-down view of the A4 page
+        pts1 = np.float32(a4_contour)
+        pts2 = np.float32([[0, 0], [a4_width_cm * pixel_per_cm_width, 0], [0, a4_height_cm * pixel_per_cm_height], [a4_width_cm * pixel_per_cm_width, a4_height_cm * pixel_per_cm_height]])
+        matrix = cv2.getPerspectiveTransform(pts1, pts2)
+        img_warp = cv2.warpPerspective(image, matrix, (int(a4_width_cm * pixel_per_cm_width), int(a4_height_cm * pixel_per_cm_height)))
+        return img_warp, a4_contour
+    return None, None
+
+# Detect and crop the A4 page
+img_warp, a4_contour = detect_and_crop_a4_page(image)
+
+if img_warp is not None:
+    # Draw the A4 page contour on the original image
+    cv2.drawContours(image, [a4_contour], -1, (0, 255, 0), 2)
+    
+    # Process the detected objects based on the A4 reference
+    for box in boxes:
+        x1, y1, x2, y2 = map(int, box)
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Draw bounding box
+
+        # Calculate real-world dimensions in cm based on A4 page reference
+        real_width, real_height = calculate_real_world_dimensions(x1, y1, x2, y2)
+
+        # Annotate dimensions on the image
+        cv2.putText(image, f"{real_width:.1f}cm", (x1 + 10, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 155, 0), 2)
+        cv2.putText(image, f"{real_height:.1f}cm", (x2 + 10, y1 + (y2 - y1) // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 155, 0), 2)
+
+    # Display the annotated image
+    plt.figure(figsize=(10, 10))
+    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    plt.axis('off')
+    plt.show()
+
+    # Save the annotated image
+    output_img_path = "/content/annotated_example_01_with_a4_crop.jpg"
+    cv2.imwrite(output_img_path, image)
+    print(f"Annotated image saved to {output_img_path}")
+else:
+    print("A4 page not detected in the image.")
